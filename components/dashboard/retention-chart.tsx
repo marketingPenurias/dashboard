@@ -14,15 +14,16 @@ export function RetentionChart({ data }: { data: Row[] }) {
   return (
     <ResponsiveContainer width="100%" height={220}>
       <LineChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
-        <XAxis dataKey="semana" tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+        <XAxis dataKey="semana" tick={{ fontSize: 11, fill: "#6b5fa6" }} tickLine={false} axisLine={false} />
+        <YAxis tick={{ fontSize: 11, fill: "#6b5fa6" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
         <Tooltip
-          contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 6, fontSize: 12 }}
-          labelStyle={{ color: "#94a3b8" }}
-          formatter={(v: number) => [`${v}%`]}
+          contentStyle={{ background: "#0e0c14", border: "1px solid rgba(139, 92, 246, 0.3)", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "#a78bfa" }}
+          itemStyle={{ color: "#e9d5ff" }}
+          formatter={(v) => [v != null ? `${v}%` : "—"]}
         />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
-        <Line type="monotone" dataKey="retención" name="Retención W3" stroke="#e2e8f0" strokeWidth={2} dot={false} />
+        <Legend wrapperStyle={{ fontSize: 11, color: "#a78bfa" }} />
+        <Line type="monotone" dataKey="retención" name="Retención W3" stroke="#8b5cf6" strokeWidth={2} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   );

@@ -19,9 +19,9 @@ async function getGraphData(tenantId: string): Promise<GraphRow[]> {
 }
 
 const tierColors: Record<string, string> = {
-  alpha: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  influencer: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  standard: "bg-muted text-muted-foreground",
+  alpha: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  influencer: "bg-violet-500/20 text-violet-400 border-violet-500/30",
+  standard: "bg-muted/50 text-muted-foreground",
 };
 
 export default async function GraphPage() {

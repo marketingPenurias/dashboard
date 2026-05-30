@@ -1,27 +1,26 @@
 "use client";
 
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 type Economy = { tokens_issued: number; tokens_burned: number };
 
 export function TokenEconomyChart({ data }: { data: Economy }) {
   const chartData = [
-    { label: "Emitidos", value: Number(data.tokens_issued) },
-    { label: "Quemados", value: Number(data.tokens_burned) },
+    { label: "Emitidos", value: Number(data.tokens_issued), fill: "#10b981" },
+    { label: "Quemados", value: Number(data.tokens_burned), fill: "#f43f5e" },
   ];
 
   return (
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
-        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} />
+        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6b5fa6" }} tickLine={false} axisLine={false} />
+        <YAxis tick={{ fontSize: 11, fill: "#6b5fa6" }} tickLine={false} axisLine={false} />
         <Tooltip
-          contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 6, fontSize: 12 }}
-          labelStyle={{ color: "#94a3b8" }}
-          itemStyle={{ color: "#e2e8f0" }}
+          contentStyle={{ background: "#0e0c14", border: "1px solid rgba(139, 92, 246, 0.3)", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "#a78bfa" }}
+          itemStyle={{ color: "#e9d5ff" }}
         />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
-        <Bar dataKey="value" name="Tokens" fill="#e2e8f0" radius={[3, 3, 0, 0]} />
+        <Bar dataKey="value" name="Tokens" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

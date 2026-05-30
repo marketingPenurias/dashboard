@@ -15,18 +15,18 @@ export function LiveVibeChart({ data }: { data: Row[] }) {
       <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
         <defs>
           <linearGradient id="tokensGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#e2e8f0" stopOpacity={0.3} />
-            <stop offset="95%" stopColor="#e2e8f0" stopOpacity={0} />
+            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.35} />
+            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <XAxis dataKey="time" tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} />
+        <XAxis dataKey="time" tick={{ fontSize: 11, fill: "#6b5fa6" }} tickLine={false} axisLine={false} />
+        <YAxis tick={{ fontSize: 11, fill: "#6b5fa6" }} tickLine={false} axisLine={false} />
         <Tooltip
-          contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 6, fontSize: 12 }}
-          labelStyle={{ color: "#94a3b8" }}
-          itemStyle={{ color: "#e2e8f0" }}
+          contentStyle={{ background: "#0e0c14", border: "1px solid rgba(139, 92, 246, 0.3)", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "#a78bfa" }}
+          itemStyle={{ color: "#e9d5ff" }}
         />
-        <Area type="monotone" dataKey="tokens" stroke="#e2e8f0" strokeWidth={2} fill="url(#tokensGrad)" />
+        <Area type="monotone" dataKey="tokens" stroke="#8b5cf6" strokeWidth={2} fill="url(#tokensGrad)" />
       </AreaChart>
     </ResponsiveContainer>
   );

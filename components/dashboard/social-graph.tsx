@@ -13,9 +13,9 @@ type GraphRow = {
 };
 
 const tierColor: Record<string, string> = {
-  alpha: "#facc15",
-  influencer: "#60a5fa",
-  standard: "#64748b",
+  alpha: "#f59e0b",
+  influencer: "#8b5cf6",
+  standard: "#3d2060",
 };
 
 const EMPTY_NODES = [
@@ -51,7 +51,7 @@ export function SocialGraph({ rows }: { rows: GraphRow[] }) {
       nodeColor={(node: any) => tierColor[node.tier ?? "standard"]}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       nodeVal={(node: any) => node.val ?? 1}
-      linkColor={() => "#334155"}
+      linkColor={() => "rgba(139, 92, 246, 0.3)"}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       nodeLabel={(node: any) => node.name ?? ""}
       width={480}
