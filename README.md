@@ -1,36 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NightGraph Dashboard
 
-## Getting Started
+Panel analítico de plataforma (`ajustes.nightgraph.io`) — React Router 7 + Cloudflare Workers.
 
-First, run the development server:
+Ver [DOCU.md](./DOCU.md) para la arquitectura completa (auth, rutas, base de datos, cómo añadir una vista).
+
+## Arrancar en local
 
 ```bash
+npm install
+cp .dev.vars.example .dev.vars   # rellenar SUPABASE_SECRET_KEY / ANALYTICS_JWT_SECRET
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre [http://localhost:5173](http://localhost:5173).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Script | Qué hace |
+|---|---|
+| `npm run dev` | Servidor de desarrollo (Vite + plugin de Cloudflare) |
+| `npm run build` | Build de producción (`react-router build`) |
+| `npm run deploy` | `wrangler deploy` manual (normalmente el deploy va por Cloudflare Workers Builds en push a `main`) |
+| `npm run cf-typegen` | Regenera `worker-configuration.d.ts` (tipos de `Env`) y los tipos de rutas — correr tras tocar `wrangler.json` o `app/routes.ts` |
+| `npm run check` | `tsc` + build + `wrangler deploy --dry-run`, verificación completa antes de desplegar |
 
-## Learn More
+## Stack
 
-To learn more about Next.js, take a look at the following resources:
+React Router 7 · Cloudflare Workers · Tailwind 4 · shadcn (Base UI) · Supabase (mismo proyecto que `web-juegos`) · recharts · react-force-graph-2d.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Este repo es independiente de `web-juegos` (repo de otro compañero) — nunca se toca desde aquí, solo se usa como referencia de patrones ya probados en producción.

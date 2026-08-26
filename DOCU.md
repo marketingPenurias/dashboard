@@ -1,218 +1,237 @@
 # NightGraph — The Grid Dashboard
 
-Dashboard analítico B2B para nightclubs. Permite al staff del tenant ver métricas en tiempo real: actividad de tokens, red de referidos y retención de usuarios.
+Dashboard analítico para dueños de discoteca y equipo de plataforma. Permite ver métricas en tiempo real:
+actividad de tokens, red de referidos y retención de usuarios.
+
+> Reescrito de Next.js a **React Router 7 + Cloudflare Workers** el 2026-08-26 (Fase 1 del roadmap de
+> `ajustes.nightgraph.io`), corrigiendo dos hallazgos de seguridad de la versión anterior. Ver
+> "Historial" al final de este documento.
 
 ---
 
 ## Estructura del proyecto
 
 ```
-nightgraph/
-├── proxy.ts                          # Interceptor de rutas (Next.js 16, antes middleware.ts)
+dashboard/
+├── wrangler.json                     # Config del Worker (vars públicas; secrets van aparte)
+├── vite.config.ts                    # Plugin de Cloudflare + Tailwind + React Router
+├── react-router.config.ts
+├── workers/app.ts                    # Entry point del Worker (fetch handler)
+├── database/                         # SQL versionado — NO existe en web-juegos, es propio de este repo
+│   ├── 001_platform_staff.sql        # Staff de plataforma (equipo Nightgraph)
+│   ├── 002_promoter_staff.sql        # Staff de promotora (dueños de discoteca)
+│   └── 003_seed_platform_staff.sql   # Siembra el primer super_admin
 ├── app/
-│   ├── page.tsx                      # Redirige a /dashboard/live-vibe
-│   ├── login/page.tsx                # Pantalla de login (client component)
-│   ├── dashboard/
-│   │   ├── layout.tsx                # Sidebar de navegación + botón logout
-│   │   ├── live-vibe/page.tsx        # Actividad última hora
-│   │   ├── retention/page.tsx        # Cohortes y token economy
-│   │   └── graph/page.tsx            # Red de referidos
-│   └── api/auth/
-│       ├── exchange/route.ts         # Supabase JWT → analytics JWT
-│       └── logout/route.ts           # Borra cookie y redirige a /login
-├── components/dashboard/
-│   ├── live-vibe-chart.tsx           # Gráfico de área (tokens/minuto)
-│   ├── retention-chart.tsx           # Gráfico de barras (cohortes)
-│   ├── token-economy-chart.tsx       # Gráfico emisión vs quema
-│   ├── social-graph.tsx              # Grafo de fuerza (react-force-graph-2d)
-│   └── logout-button.tsx             # Botón de cerrar sesión (client component)
-└── lib/
-    ├── analytics-jwt.ts              # Firma y verificación de analytics JWT
-    ├── tenant.ts                     # Lee tenant_id del header x-tenant-id
-    └── supabase/
-        ├── server.ts                 # Cliente service_role + analyticsRpc()
-        └── client.ts                 # Cliente anon para el browser
+│   ├── root.tsx                      # Layout raíz (html/head/body, sin lógica de auth)
+│   ├── routes.ts                     # Declaración de rutas RR7
+│   ├── routes/
+│   │   ├── home.tsx                  # `/` → redirect a /dashboard
+│   │   ├── login.tsx                 # `/login` — botón "Entrar con Google"
+│   │   ├── auth.callback.tsx         # `/auth/callback` — handshake PKCE (ver sección Auth)
+│   │   ├── api.auth.exchange.ts      # POST — Supabase JWT → analytics JWT
+│   │   ├── api.auth.logout.ts        # POST — borra cookie
+│   │   ├── dashboard.tsx             # Layout: sidebar + <Outlet/>, llama resolveAccess()
+│   │   ├── dashboard._index.tsx      # `/dashboard` → redirect a live-vibe
+│   │   ├── dashboard.live-vibe.tsx
+│   │   ├── dashboard.graph.tsx
+│   │   └── dashboard.retention.tsx
+│   ├── lib/
+│   │   ├── access.server.ts          # resolveAccess() — el fix de seguridad, ver abajo
+│   │   ├── analytics-jwt.server.ts   # firma/verifica el JWT (jose, HS256)
+│   │   ├── supabase.server.ts        # getSupabase / getServiceSupabase / analyticsRpc
+│   │   └── supabase.client.ts        # cliente browser (PKCE)
+│   └── components/
+│       ├── ui/                       # button, card, badge, chart (shadcn, Base UI)
+│       └── dashboard/                # nav-link, logout-button, social-graph, 3 charts
+├── .env / .env.production            # VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY (públicas, commiteadas)
+└── .dev.vars                         # SUPABASE_SECRET_KEY / ANALYTICS_JWT_SECRET (secretas, gitignored)
 ```
 
 ---
 
-## Variables de entorno
+## Autenticación y autorización
 
-Archivo: `nightgraph/.env.local` (en `.gitignore`, nunca commitear)
+### Por qué NO es como en `web-juegos`
 
-| Variable | Dónde se usa | Descripción |
-|----------|-------------|-------------|
-| `SUPABASE_URL` | Servidor | URL del proyecto Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | Solo servidor | Clave service_role — bypassea RLS. **Nunca exponer al cliente.** |
-| `ANALYTICS_JWT_SECRET` | Solo servidor | Secret para firmar los analytics JWT. String aleatorio largo. |
-| `NEXT_PUBLIC_SUPABASE_URL` | Cliente y servidor | Igual que SUPABASE_URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Cliente | Clave anon pública — segura en el navegador |
+`web-juegos` tiene `tenant_staff`: autoriza el panel **operativo** (`/admin` — DJ, barra, puerta). Este
+dashboard es un producto distinto para una audiencia distinta (dueños de discoteca + equipo Nightgraph), así
+que usa **tablas propias**:
+
+| Tabla | Para quién | Migración |
+|---|---|---|
+| `platform_staff` | Equipo Nightgraph — ve todas las discotecas | `database/001_platform_staff.sql` |
+| `promoter_staff` | Dueño de una promotora — ve solo sus salas | `database/002_promoter_staff.sql` |
+
+`tenant_staff` **nunca** se consulta desde este repo. Las tres tablas son conjuntos disjuntos — el equipo
+Nightgraph no está en `promoter_staff`, un dueño no está en `platform_staff`.
+
+### Login (Google OAuth, PKCE)
+
+1. El usuario pulsa "Entrar con Google" en `/login` → `supabase.auth.signInWithOAuth({ provider: "google", redirectTo: ".../auth/callback" })`.
+2. Google → Supabase → `/auth/callback`, que hace `exchangeCodeForSession(code)` para obtener la sesión de
+   Supabase (patrón PKCE idéntico al de `web-juegos/app/routes/auth.callback.tsx` — ver ese archivo si hay
+   dudas sobre el handshake).
+3. Con el `access_token` ya en mano, `/auth/callback` hace `POST /api/auth/exchange`, que:
+   - Verifica el token con el cliente **anon**.
+   - Busca PRIMERO en `platform_staff` (prioridad máxima, acceso total).
+   - Si no hay fila, busca en `promoter_staff` con **`.maybeSingle()`** (nunca `.single()`).
+   - Si tampoco hay fila → 403. Un usuario que solo esté en `tenant_staff` (staff operativo) no tiene acceso.
+   - Firma un JWT (HS256, 1h) y lo pone en una cookie `httpOnly` (`ng_analytics_token`).
+4. Redirect a `/dashboard`.
+
+**Requisito para dar de alta a alguien nuevo:** insertar su fila a mano en `platform_staff` o
+`promoter_staff` en Supabase — no hay UI para esto todavía (Fase 4 del roadmap: `/staff`).
+
+### Cómo se resuelve el tenant en cada request (`app/lib/access.server.ts`)
+
+```ts
+export async function resolveAccess(request: Request, context: AppLoadContext): Promise<AccessScope> {
+  const token = readCookie(request, ANALYTICS_COOKIE);
+  if (!token) throw redirect("/login");
+  const payload = await verifyAnalyticsToken(token, secret); // firma verificada, HS256
+  // payload.kind === "platform" → { tenantIds: "ALL" }
+  // payload.kind === "owner"    → { tenantIds: [...] } (todas las salas de su promotora)
+}
+```
+
+**Regla no negociable:** el tenant SIEMPRE sale de este JWT verificado. Nunca de un header, query param o
+body. La versión Next.js anterior tenía aquí el hallazgo de seguridad CRÍTICO — leía `x-tenant-id` de un
+header que el cliente podía fabricar. Ese patrón no existe en absoluto en este código; no hay ningún sitio
+donde un header determine el tenant.
+
+Cada loader de página vuelve a llamar `resolveAccess()` (barato, defensa en profundidad). Si
+`scope.tenantIds === "ALL"` (staff de plataforma), la página muestra "selecciona una sala" — el selector
+multi-sala real es Fase 2, todavía no construido.
 
 ---
 
-## Flujo de autenticación
+## Conexión a Supabase (`app/lib/supabase.server.ts`)
 
-### Login
+A diferencia de Next.js, en un Worker de Cloudflare **no hay `process.env`** persistente — las credenciales
+llegan por request vía `context.cloudflare.env`:
 
-1. El usuario entra email y contraseña en `/login`
-2. El cliente llama a `supabase.auth.signInWithPassword()` → recibe `access_token` de Supabase
-3. El cliente hace `POST /api/auth/exchange` con el `access_token`
-4. El servidor (exchange):
-   - Verifica el token con el **cliente anon** (`supabaseAnon.auth.getUser(token)`)
-   - Busca al usuario en `public.tenant_staff` con el **cliente service_role** (bypassea RLS)
-   - Si el usuario es staff activo → crea un analytics JWT con `{ tenant_id, role, scope: "analytics:read" }`
-   - Guarda el JWT en una cookie `httpOnly` llamada `ng_analytics_token` (dura 1 hora)
-5. El cliente es redirigido a `/dashboard`
-
-### Protección de rutas
-
-`proxy.ts` intercepta todas las peticiones a `/dashboard/*`:
-- Si no hay cookie `ng_analytics_token` → redirige a `/login`
-- Si el JWT no es válido o ha expirado → borra la cookie y redirige a `/login`
-- Si el JWT es válido → extrae `tenant_id` del payload y lo añade como header `x-tenant-id` a la request
-
-### En las páginas
-
-Las páginas del dashboard son **Server Components** (se ejecutan en el servidor, no en el navegador). Leen `x-tenant-id` via `getTenantId()` y llaman a Supabase.
-
-```typescript
-// Patrón estándar en todas las páginas
-const tenantId = await getTenantId();           // lee x-tenant-id del header
-const rows = await analyticsRpc("ng_get_...", { p_tenant_id: tenantId });
+```ts
+export function getSupabase(context)        // cliente anon — solo para verificar access_token en login
+export function getServiceSupabase(context) // cliente SECRET (service_role) — bypassea RLS
+export async function analyticsRpc<T>(context, fnName, params) // wrapper sobre .rpc(), usa service_role
 ```
 
-### Logout
+### Funciones RPC disponibles (schema `analytics`, expuestas como `public.ng_get_*`)
 
-El botón de logout (`components/dashboard/logout-button.tsx`) hace `POST /api/auth/logout`, que borra la cookie y redirige a `/login`. El botón está en la parte inferior del sidebar.
-
----
-
-## Conexión a Supabase
-
-### `analyticsRpc<T>(fnName, params)`
-
-Función central en `lib/supabase/server.ts`. Llama a una función RPC de Supabase con el cliente service_role y devuelve los resultados tipados.
-
-```typescript
-const rows = await analyticsRpc<MiTipo>("ng_get_live_vibe", { p_tenant_id: tenantId });
-```
-
-Lanza error si Supabase responde con error (la página mostrará error 500 en dev, error genérico en prod).
-
-### Funciones RPC disponibles en Supabase
-
-Las funciones viven en el schema `public` con prefijo `ng_` (PostgREST solo expone `public`). Internamente llaman a funciones SECURITY DEFINER del schema `analytics`.
-
-| Función Supabase | Parámetro | Qué devuelve |
-|-----------------|-----------|-------------|
+| Función | Parámetro (Fase 1) | Qué devuelve |
+|---|---|---|
 | `ng_get_live_vibe` | `p_tenant_id uuid` | Actividad por minuto y zona (última hora) |
 | `ng_get_cohort_retention` | `p_tenant_id uuid` | Retención semanal por cohorte |
 | `ng_get_token_economy` | `p_tenant_id uuid` | Tokens emitidos, quemados, revenue EUR |
 | `ng_get_graph_penetration` | `p_tenant_id uuid` | Usuarios alfa, tier, referidos |
 
+Todavía reciben `p_tenant_id` singular (no `p_tenant_ids uuid[]` + filtros de fecha/fiesta) — ese cambio de
+firma es Fase 2. Existe una quinta función, `ng_get_event_cohort_retention`, que este dashboard no consume.
+
+**Importante:** el DDL real de estas funciones y de las tablas `dim_*`/`fact_*` del schema `analytics` **no
+está versionado en ningún repo** — vive solo dentro de Supabase (nunca se hizo `pg_dump`). Si hace falta
+tocarlas, hay que exportar el DDL real desde el SQL Editor de Supabase primero.
+
+---
+
+## Base de datos — lo que SÍ está versionado aquí
+
+`database/001_platform_staff.sql` y `002_promoter_staff.sql` — ambas con RLS activo y **sin políticas**
+(solo el Worker con `service_role` accede; RLS es defensa en profundidad, no el mecanismo primario).
+`003_seed_platform_staff.sql` siembra el primer `super_admin` buscando su cuenta por email en `auth.users`
+— si esa cuenta no existe todavía (nunca inició sesión), el `insert` no falla, simplemente no inserta nada;
+hay que re-ejecutarlo después de que la cuenta exista.
+
+Numeración propia de este repo (empieza en 001) — no tiene relación con la numeración de
+`web-juegos/database/`.
+
+---
+
+## Variables de entorno
+
+| Variable | Dónde vive | Pública/secreta |
+|---|---|---|
+| `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` | `.env` (dev) / `.env.production` (build) | Pública, commiteada |
+| `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` | `wrangler.json` → `vars` | Pública, commiteada |
+| `SUPABASE_SECRET_KEY` | `.dev.vars` (local) / `wrangler secret put` (prod) | **Secreta, nunca commitear** |
+| `ANALYTICS_JWT_SECRET` | `.dev.vars` (local) / `wrangler secret put` (prod) | **Secreta, nunca commitear** — generar una distinta para prod, no reusar la de dev |
+
+Si cambias `wrangler.json`, corre `npm run cf-typegen` para regenerar `worker-configuration.d.ts`.
+
 ---
 
 ## Añadir una nueva página al dashboard
 
-1. Crear `app/dashboard/<nombre>/page.tsx` como Server Component:
+1. Crear `app/routes/dashboard.<nombre>.tsx`:
 
-```typescript
-import { analyticsRpc } from "@/lib/supabase/server";
-import { getTenantId } from "@/lib/tenant";
+```tsx
+import type { Route } from "./+types/dashboard.<nombre>";
+import { analyticsRpc } from "@/lib/supabase.server";
+import { resolveAccess } from "@/lib/access.server";
 
-type MiRow = { campo: string; valor: number };
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const scope = await resolveAccess(request, context);
+  if (scope.tenantIds === "ALL") return { needsTenantSelection: true as const };
+  const rows = await analyticsRpc(context, "ng_get_mi_funcion", { p_tenant_id: scope.tenantIds[0] });
+  return { needsTenantSelection: false as const, rows };
+}
 
-export default async function MiPagina() {
-  const tenantId = await getTenantId();
-  const rows = await analyticsRpc<MiRow>("ng_get_mi_funcion", { p_tenant_id: tenantId });
-
-  return <div>...</div>;
+export default function MiPagina({ loaderData }: Route.ComponentProps) {
+  // ...
 }
 ```
 
-2. Añadir el enlace en `app/dashboard/layout.tsx` (array `navItems`)
-
-3. Si necesita una función RPC nueva:
-   - Crear la función en `analytics` schema (SQL 006)
-   - Crear el wrapper `ng_*` en `public` schema (SQL 007)
-   - Ejecutar ambas en Supabase SQL Editor
+2. Añadirla a `app/routes.ts` (dentro del array hijo de la ruta `dashboard`).
+3. Añadir el link en el sidebar (`app/routes/dashboard.tsx`).
+4. Si hace falta una RPC nueva: crearla en el schema `analytics` + su wrapper `ng_*` en `public`, con
+   `revoke`/`grant` a `service_role` únicamente — hacerlo en el SQL Editor de Supabase y, si el cambio es
+   significativo, documentarlo aquí.
 
 ---
 
-## Arrancar el servidor de desarrollo
-
-En Windows con PowerShell (desde la carpeta `nightgraph/`):
+## Arrancar en local
 
 ```powershell
-$env:NODE_TLS_REJECT_UNAUTHORIZED=0; npx next dev
+npm install
+Copy-Item .dev.vars.example .dev.vars   # rellenar los dos secrets
+npm run dev
 ```
 
-El flag `NODE_TLS_REJECT_UNAUTHORIZED=0` es necesario en Windows con certificados corporativos. Solo para desarrollo local.
-
-El dashboard está en `http://localhost:3000`. El login en `http://localhost:3000/login`.
-
----
-
-## Base de datos — modelo analítico
-
-El schema `analytics` (separado de `public`) tiene modelo estrella:
-
-**Dimensiones:** `dim_tenants`, `dim_users`, `dim_time`, `dim_locations`, `dim_events`
-
-**Hechos:** `fact_transactions`, `fact_visits`, `fact_rewards`
-
-**Grafo:** `social_graph_referrals`, `mat_view_super_nodes` (vista materializada)
-
-### Multi-tenancy
-
-Todas las tablas tienen `tenant_id` y políticas RLS que aíslan los datos por tenant. La función `analytics.current_tenant_id()` lee la variable de sesión `app.current_tenant_id`.
-
-Las funciones RPC usan `SECURITY DEFINER` + `WHERE tenant_id = p_tenant_id` explícito para aislar datos sin depender del contexto de sesión (necesario con connection pooling).
-
-### ETL
-
-El ETL (`005_etl_public_to_analytics.sql`) mueve datos de `public` a `analytics`:
-- Dimensiones: UPSERT (actualizan si ya existen)
-- Hechos: FULL REFRESH (TRUNCATE + INSERT)
-
-Se ejecuta manualmente desde Supabase SQL Editor. En producción debería programarse con `pg_cron` o una Edge Function.
+`http://localhost:5173`. Si al abrir una ruta nueva por primera vez sale un error de React tipo
+`Cannot read properties of null (reading 'useContext')`, es la caché de dependencias de Vite
+desincronizada — borrar `node_modules/.vite` y reiniciar `npm run dev` lo arregla.
 
 ---
 
-## Datos de prueba
+## Desplegar
 
-El archivo `sql/000_seed_test_data.sql` inserta datos de prueba en el schema `public` con `tenant_id = 'a0000000-0000-0000-0000-000000000001'`.
+No hay pipeline propio en este repo (a diferencia de lo que se documentaba antes) — el deploy va por
+**Cloudflare Workers Builds** (Git integration configurada desde el Cloudflare Dashboard, apuntando a este
+repo, Worker independiente del de `web-juegos`). Antes de que reciba tráfico real:
 
-Después hay que correr `005_etl_public_to_analytics.sql` para que los datos lleguen a `analytics`.
-
-Para que el dashboard muestre los datos del seed, el registro de `public.tenant_staff` del usuario que hace login debe apuntar a `tenant_id = 'a0000000-0000-0000-0000-000000000001'`.
-
-**Limpiar datos de prueba** (sin borrar acceso real):
-```sql
-DELETE FROM analytics.fact_transactions      WHERE tenant_id = 'a0000000-0000-0000-0000-000000000001';
-DELETE FROM analytics.fact_visits            WHERE tenant_id = 'a0000000-0000-0000-0000-000000000001';
-DELETE FROM analytics.fact_rewards           WHERE tenant_id = 'a0000000-0000-0000-0000-000000000001';
-DELETE FROM analytics.dim_users              WHERE tenant_id = 'a0000000-0000-0000-0000-000000000001';
-DELETE FROM analytics.dim_events             WHERE tenant_id = 'a0000000-0000-0000-0000-000000000001';
-DELETE FROM analytics.dim_tenants            WHERE tenant_id = 'a0000000-0000-0000-0000-000000000001';
-REFRESH MATERIALIZED VIEW analytics.mat_view_super_nodes;
-DELETE FROM public.wallet_ledger  WHERE tenant_id = 'a0000000-0000-0000-0000-000000000001';
-DELETE FROM public.user_profiles  WHERE tenant_id = 'a0000000-0000-0000-0000-000000000001';
-DELETE FROM public.tenant_events  WHERE tenant_id = 'a0000000-0000-0000-0000-000000000001';
-DELETE FROM public.tenants        WHERE id         = 'a0000000-0000-0000-0000-000000000001';
-DELETE FROM auth.users WHERE id::text LIKE 'f0000000%';
-```
+- [ ] `wrangler secret put SUPABASE_SECRET_KEY` y `ANALYTICS_JWT_SECRET` en producción.
+- [ ] Ejecutar `database/001` a `003` en el SQL Editor de Supabase.
+- [ ] Confirmar que `https://ajustes.nightgraph.io/auth/callback` está cubierto por el Redirect URL
+      configurado en Supabase (Authentication → URL Configuration).
+- [ ] `npm run check` en verde.
 
 ---
 
-## Problemas conocidos y soluciones
+## Problemas conocidos
 
 | Problema | Causa | Solución |
-|----------|-------|----------|
-| Dashboard muestra "Sin datos" | `tenant_id` del JWT no coincide con el de los datos en analytics | Actualizar `tenant_staff.tenant_id` al tenant que tiene datos; cerrar sesión y volver a entrar |
-| "Could not find function public.ng_get_*" | Las funciones wrapper no están creadas | Ejecutar `007_public_rpc_wrappers.sql` en Supabase SQL Editor |
-| "Invalid schema: analytics" | PostgREST no expone schema analytics | No intentar usar analytics directamente; usar los wrappers `ng_*` en public |
-| "permission denied for table tenant_staff" | service_role no tiene GRANT en la tabla | Ejecutar: `GRANT SELECT ON public.tenant_staff TO service_role;` |
-| "Usuario no autorizado como staff" | getUser() con service_role no funciona bien | Usar cliente anon (no service_role) para `auth.getUser()` |
-| Error SSL en npm (Windows) | Certificado corporativo | Anteponer `$env:NODE_TLS_REJECT_UNAUTHORIZED=0` al comando |
-| `aframe is not defined` en build | react-force-graph importa aframe para VR | Usar `react-force-graph-2d` en su lugar |
+|---|---|---|
+| `Cannot read properties of null (reading 'useContext')` al visitar una ruta por primera vez en dev | Caché de Vite (`node_modules/.vite`) desincronizada tras cambiar dependencias | `rm -rf node_modules/.vite`, reiniciar `npm run dev` |
+| "Invalid API key" al intentar loguear | `SUPABASE_PUBLISHABLE_KEY` mal transcrita en algún `.env`/`wrangler.json` | Verificar con `curl .../auth/v1/settings -H "apikey: <key>"` — debe devolver 200, no 401 |
+| "PKCE code verifier not found in storage" | Localstorage con un `code_verifier` de un intento de login anterior sin completar | Limpiar Local Storage del dominio en DevTools, reintentar en pestaña nueva |
+| Redirect a `/login` sin motivo aparente tras "Entrar con Google" | La URL de callback exacta (`.../auth/callback`) no está en la lista de Redirect URLs de Supabase | Añadirla en Authentication → URL Configuration |
+| "Usuarios activos" y "Transacciones (1h)" muestran el mismo valor en Live Vibe | Bug conocido en el contrato de `ng_get_live_vibe` (usa `totalEvents` para ambos) | Pendiente para Fase 2, junto al cambio de firma del RPC — ver `// TODO(fase-2)` en `dashboard.live-vibe.tsx` |
+| `tokensPerMinute` da una cifra rara con varias zonas | Divide entre `rows.length` (filas minuto×zona) en vez de minutos reales | Igual, Fase 2 |
+
+---
+
+## Historial
+
+- **2026-08-26** — Reescrito de Next.js 16 a React Router 7 + Cloudflare Workers (Fase 1 del roadmap de
+  seguridad). Corregidos: suplantación de tenant vía header `x-tenant-id` (CRÍTICO) y autorización contra
+  tabla equivocada `tenant_staff` (GRAVE). Login cambiado de email/contraseña a Google OAuth (PKCE).
