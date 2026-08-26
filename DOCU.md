@@ -4,8 +4,8 @@ Dashboard analítico para dueños de discoteca y equipo de plataforma. Permite v
 actividad de tokens, red de referidos y retención de usuarios.
 
 > Reescrito de Next.js a **React Router 7 + Cloudflare Workers** el 2026-08-26 (Fase 1 del roadmap de
-> `ajustes.nightgraph.io`), corrigiendo dos hallazgos de seguridad de la versión anterior. Ver
-> "Historial" al final de este documento.
+> `ajustes.nightgraph.io`), corrigiendo dos hallazgos de seguridad de la versión anterior. **Desplegado y
+> funcionando en `https://ajustes.nightgraph.io` desde ese mismo día.** Ver "Historial" al final.
 
 ---
 
@@ -187,6 +187,16 @@ export default function MiPagina({ loaderData }: Route.ComponentProps) {
    `revoke`/`grant` a `service_role` únicamente — hacerlo en el SQL Editor de Supabase y, si el cambio es
    significativo, documentarlo aquí.
 
+   ⚠️ **Esto no es opcional.** El 2026-08-26, ya en producción, se comprobó con `curl` que las 5 RPC
+   existentes eran invocables directamente con la clave `publishable` (pública, la misma que hay en el
+   navegador), saltándose el Worker y el login entero. Cualquier RPC nueva que no lleve su `revoke`/`grant`
+   tiene el mismo problema desde el minuto uno. Verificar así tras crear una:
+   ```bash
+   curl -X POST "https://cfxpwsexxwcxogwuykue.supabase.co/rest/v1/rpc/<nombre>" \
+     -H "apikey: <SUPABASE_PUBLISHABLE_KEY>" -H "Content-Type: application/json" -d '{"p_tenant_id":"..."}'
+   ```
+   Debe devolver `401 permission denied` — si devuelve `200`, falta el `revoke`.
+
 ---
 
 ## Arrancar en local
@@ -205,15 +215,44 @@ desincronizada — borrar `node_modules/.vite` y reiniciar `npm run dev` lo arre
 
 ## Desplegar
 
-No hay pipeline propio en este repo (a diferencia de lo que se documentaba antes) — el deploy va por
-**Cloudflare Workers Builds** (Git integration configurada desde el Cloudflare Dashboard, apuntando a este
-repo, Worker independiente del de `web-juegos`). Antes de que reciba tráfico real:
+No hay pipeline propio en este repo — el deploy va por **Cloudflare Workers Builds** (Git integration
+configurada desde el Cloudflare Dashboard, apuntando a este repo, Worker independiente del de `web-juegos`).
 
-- [ ] `wrangler secret put SUPABASE_SECRET_KEY` y `ANALYTICS_JWT_SECRET` en producción.
-- [ ] Ejecutar `database/001` a `003` en el SQL Editor de Supabase.
-- [ ] Confirmar que `https://ajustes.nightgraph.io/auth/callback` está cubierto por el Redirect URL
-      configurado en Supabase (Authentication → URL Configuration).
-- [ ] `npm run check` en verde.
+### Cuenta de Cloudflare — importante
+
+El Worker vive en **la cuenta del compañero** (`Alvarocdiez@gmail.com's Account`,
+`account_id: 05395d36fbdf2ce550ba8808d4d4f4ff`, ya fijado en `wrangler.json`), **no** en una cuenta propia —
+porque la zona DNS `nightgraph.io` está dada de alta ahí, y Cloudflare exige que el Worker y la zona vivan
+en la misma cuenta para poder atarle un dominio personalizado. La usuaria fue invitada como miembro de esa
+cuenta. Si `wrangler` (CLI) da error `"More than one account available but unable to select one in
+non-interactive mode"`, es por esto — el `account_id` en `wrangler.json` ya lo resuelve para comandos
+futuros.
+
+El nombre real del Worker desplegado es **`dashboard`** (no `nightgraph-dashboard` como dice `wrangler.json`
+— el flujo "Import a repository" del dashboard de Cloudflare no leyó el campo `name` del archivo, usó el
+nombre del repo). Tenerlo en cuenta al buscar logs o si algún día se vuelve a usar la CLI.
+
+### Checklist (ya completado el 2026-08-26, dejar como referencia)
+
+- [x] Worker creado vía **Workers & Pages → Create Application → Workers → Import a repository** (no vía
+      `wrangler login`/`wrangler deploy` — el login OAuth de la CLI daba timeout en este entorno; todo se
+      hizo desde el dashboard web).
+- [x] `SUPABASE_SECRET_KEY` y `ANALYTICS_JWT_SECRET` puestos en **Runtime Variables and Secrets** — ⚠️ NO en
+      la sección "Variables and Secrets" a secas, esa es solo de build-time y no llega al Worker en
+      ejecución (ver "Problemas conocidos" más abajo).
+- [x] `database/001` a `003` ejecutados en el SQL Editor de Supabase.
+- [x] `https://ajustes.nightgraph.io/auth/callback` cubierto por el Redirect URL comodín
+      `https://*.nightgraph.io/auth/callback` ya existente en Supabase (no hizo falta añadir uno nuevo).
+- [x] Route específica `ajustes.nightgraph.io/*` → Worker `dashboard` añadida en la zona (ver "Problemas
+      conocidos" — había un wildcard `*.nightgraph.io/*` que la interceptaba antes).
+- [x] `revoke`/`grant` aplicado a las 5 RPC `ng_get_*` — ver sección de arriba, era un hallazgo de seguridad
+      real encontrado ya con el dashboard en producción.
+- [x] Dominio atado: **Worker → Settings → Domains & Routes → Add Custom Domain** → `ajustes.nightgraph.io`.
+
+Para el próximo deploy (cualquier push a `main` ya dispara uno automático vía Workers Builds): si tras
+guardar Runtime Variables/Secrets nuevas el cambio no parece aplicarse, comprobar en la pestaña
+**Deployments** si la versión activa (punto azul) es la más reciente — añadir una variable NO redespliega
+sola, hay que forzarlo (un `git commit --allow-empty && git push` funciona).
 
 ---
 
@@ -227,6 +266,11 @@ repo, Worker independiente del de `web-juegos`). Antes de que reciba tráfico re
 | Redirect a `/login` sin motivo aparente tras "Entrar con Google" | La URL de callback exacta (`.../auth/callback`) no está en la lista de Redirect URLs de Supabase | Añadirla en Authentication → URL Configuration |
 | "Usuarios activos" y "Transacciones (1h)" muestran el mismo valor en Live Vibe | Bug conocido en el contrato de `ng_get_live_vibe` (usa `totalEvents` para ambos) | Pendiente para Fase 2, junto al cambio de firma del RPC — ver `// TODO(fase-2)` en `dashboard.live-vibe.tsx` |
 | `tokensPerMinute` da una cifra rara con varias zonas | Divide entre `rows.length` (filas minuto×zona) en vez de minutos reales | Igual, Fase 2 |
+| `ajustes.nightgraph.io` sirve la app de `web-juegos` (404 raro) en vez del dashboard | Ya había una Workers Route `*.nightgraph.io/*` → `web-juegos` en la zona, que capturaba `ajustes` antes que el Custom Domain nuevo | Añadir una Route específica `ajustes.nightgraph.io/*` → Worker `dashboard` en esa misma zona — más específica gana sobre el comodín, no afecta a `lapocha` ni al resto |
+| 503 / "Sin acceso al dashboard" genérico en producción pese a tener los secrets puestos | Los secrets se metieron en "Variables and Secrets" (build-time) en vez de "**Runtime** Variables and Secrets" (lo único que llega a `context.cloudflare.env`) | Moverlos/añadirlos a la sección Runtime específicamente |
+| Runtime Variable/Secret añadida pero el error sigue igual | Cloudflare crea una versión nueva en Deployments pero no la activa sola | Forzar redeploy: `git commit --allow-empty -m "..." && git push`, o buscar "Retry deployment" en la pestaña Deployments |
+| `wrangler login` da timeout esperando el código de autorización | El flujo OAuth de la CLI no completa bien en este entorno (Git Bash no abre navegador; PowerShell a veces sí pero expira) | Hacer todo desde el dashboard web de Cloudflare en su lugar — no hace falta la CLI para nada de esto |
+| Cualquier RPC responde `200` con la clave `publishable` sin pasar por el Worker | Falta `revoke execute ... from public, anon, authenticated; grant ... to service_role;` sobre esa función | Ver el aviso ⚠️ en "Añadir una nueva página al dashboard" — comprobar SIEMPRE con `curl` tras crear una RPC nueva |
 
 ---
 
@@ -235,3 +279,14 @@ repo, Worker independiente del de `web-juegos`). Antes de que reciba tráfico re
 - **2026-08-26** — Reescrito de Next.js 16 a React Router 7 + Cloudflare Workers (Fase 1 del roadmap de
   seguridad). Corregidos: suplantación de tenant vía header `x-tenant-id` (CRÍTICO) y autorización contra
   tabla equivocada `tenant_staff` (GRAVE). Login cambiado de email/contraseña a Google OAuth (PKCE).
+- **2026-08-26 (mismo día, más tarde)** — Desplegado en `https://ajustes.nightgraph.io` (cuenta de
+  Cloudflare del compañero, ver sección "Desplegar"). Auditoría de seguridad post-deploy encontró y cerró
+  una vulnerabilidad real: las 5 RPC `ng_get_*` eran invocables directamente con la clave pública,
+  saltándose el Worker — arreglado con `revoke`/`grant` a `service_role`.
+
+## Próximo paso — Fase 2 (todavía no empezada)
+
+Selector de sala y de fiesta en la UI, nuevas firmas de RPC (`p_tenant_ids uuid[]` + filtros `p_from`/`p_to`/
+`p_event_id`), corrección de los bugs de KPI de Live Vibe (ver tabla de arriba). Requiere primero
+reconstruir/versionar el DDL real del schema `analytics` (dim_*/fact_*/las funciones en sí) exportándolo
+desde el SQL Editor de Supabase — hoy no está en ningún repo, ver sección "Conexión a Supabase" más arriba.
