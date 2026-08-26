@@ -1,0 +1,5 @@
+# Copy to .dev.vars and fill in real values for local dev.
+# SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY are public and already live in
+# wrangler.json `vars` — only the two secrets below belong here.
+SUPABASE_SECRET_KEY=
+ANALYTICS_JWT_SECRET=

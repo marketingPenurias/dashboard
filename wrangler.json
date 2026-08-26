@@ -1,0 +1,19 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "nightgraph-dashboard",
+	"main": "./workers/app.ts",
+	"compatibility_date": "2026-08-26",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"enabled": true,
+			"invocation_logs": true
+		}
+	},
+	"upload_source_maps": true,
+	"vars": {
+		"SUPABASE_URL": "https://cfxpwsexxwcxogwuykue.supabase.co",
+		"SUPABASE_PUBLISHABLE_KEY": "sb_publishable_c-vtNNGaW7lATIjegGk5zg_rC4hVZXI"
+	}
+}
