@@ -1,6 +1,7 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "nightgraph-dashboard",
+	"account_id": "05395d36fbdf2ce550ba8808d4d4f4ff",
 	"main": "./workers/app.ts",
 	"compatibility_date": "2026-08-26",
 	"compatibility_flags": ["nodejs_compat"],
