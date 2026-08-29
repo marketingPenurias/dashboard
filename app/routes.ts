@@ -11,5 +11,7 @@ export default [
 		route("live-vibe", "routes/dashboard.live-vibe.tsx"),
 		route("graph", "routes/dashboard.graph.tsx"),
 		route("retention", "routes/dashboard.retention.tsx"),
+		route("music", "routes/dashboard.music.tsx"),
+		route("perfil", "routes/dashboard.perfil.tsx"),
 	]),
 ] satisfies RouteConfig;

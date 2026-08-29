@@ -10,7 +10,7 @@ export function LiveVibeChart({ data }: { data: Row[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={220}>
-      <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+      <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
         <defs>
           <linearGradient id="tokensGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.35} />
@@ -18,7 +18,13 @@ export function LiveVibeChart({ data }: { data: Row[] }) {
           </linearGradient>
         </defs>
         <XAxis dataKey="time" tick={{ fontSize: 11, fill: "#6b5fa6" }} tickLine={false} axisLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: "#6b5fa6" }} tickLine={false} axisLine={false} />
+        <YAxis
+          tick={{ fontSize: 11, fill: "#6b5fa6" }}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={(v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k` : String(v))}
+          width={40}
+        />
         <Tooltip
           contentStyle={{ background: "#0e0c14", border: "1px solid rgba(139, 92, 246, 0.3)", borderRadius: 8, fontSize: 12 }}
           labelStyle={{ color: "#a78bfa" }}

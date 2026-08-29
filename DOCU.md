@@ -4,8 +4,8 @@ Dashboard analítico para dueños de discoteca y equipo de plataforma. Permite v
 actividad de tokens, red de referidos y retención de usuarios.
 
 > Reescrito de Next.js a **React Router 7 + Cloudflare Workers** el 2026-08-26 (Fase 1 del roadmap de
-> `ajustes.nightgraph.io`), corrigiendo dos hallazgos de seguridad de la versión anterior. **Desplegado y
-> funcionando en `https://ajustes.nightgraph.io` desde ese mismo día.** Ver "Historial" al final.
+> `dashboard.nightgraph.io`), corrigiendo dos hallazgos de seguridad de la versión anterior. **Desplegado y
+> funcionando en `https://dashboard.nightgraph.io` desde ese mismo día.** Ver "Historial" al final.
 
 ---
 
@@ -241,13 +241,13 @@ nombre del repo). Tenerlo en cuenta al buscar logs o si algún día se vuelve a 
       la sección "Variables and Secrets" a secas, esa es solo de build-time y no llega al Worker en
       ejecución (ver "Problemas conocidos" más abajo).
 - [x] `database/001` a `003` ejecutados en el SQL Editor de Supabase.
-- [x] `https://ajustes.nightgraph.io/auth/callback` cubierto por el Redirect URL comodín
+- [x] `https://dashboard.nightgraph.io/auth/callback` cubierto por el Redirect URL comodín
       `https://*.nightgraph.io/auth/callback` ya existente en Supabase (no hizo falta añadir uno nuevo).
-- [x] Route específica `ajustes.nightgraph.io/*` → Worker `dashboard` añadida en la zona (ver "Problemas
+- [x] Route específica `dashboard.nightgraph.io/*` → Worker `dashboard` añadida en la zona (ver "Problemas
       conocidos" — había un wildcard `*.nightgraph.io/*` que la interceptaba antes).
 - [x] `revoke`/`grant` aplicado a las 5 RPC `ng_get_*` — ver sección de arriba, era un hallazgo de seguridad
       real encontrado ya con el dashboard en producción.
-- [x] Dominio atado: **Worker → Settings → Domains & Routes → Add Custom Domain** → `ajustes.nightgraph.io`.
+- [x] Dominio atado: **Worker → Settings → Domains & Routes → Add Custom Domain** → `dashboard.nightgraph.io`.
 
 Para el próximo deploy (cualquier push a `main` ya dispara uno automático vía Workers Builds): si tras
 guardar Runtime Variables/Secrets nuevas el cambio no parece aplicarse, comprobar en la pestaña
@@ -266,7 +266,7 @@ sola, hay que forzarlo (un `git commit --allow-empty && git push` funciona).
 | Redirect a `/login` sin motivo aparente tras "Entrar con Google" | La URL de callback exacta (`.../auth/callback`) no está en la lista de Redirect URLs de Supabase | Añadirla en Authentication → URL Configuration |
 | "Usuarios activos" y "Transacciones (1h)" muestran el mismo valor en Live Vibe | Bug conocido en el contrato de `ng_get_live_vibe` (usa `totalEvents` para ambos) | Pendiente para Fase 2, junto al cambio de firma del RPC — ver `// TODO(fase-2)` en `dashboard.live-vibe.tsx` |
 | `tokensPerMinute` da una cifra rara con varias zonas | Divide entre `rows.length` (filas minuto×zona) en vez de minutos reales | Igual, Fase 2 |
-| `ajustes.nightgraph.io` sirve la app de `web-juegos` (404 raro) en vez del dashboard | Ya había una Workers Route `*.nightgraph.io/*` → `web-juegos` en la zona, que capturaba `ajustes` antes que el Custom Domain nuevo | Añadir una Route específica `ajustes.nightgraph.io/*` → Worker `dashboard` en esa misma zona — más específica gana sobre el comodín, no afecta a `lapocha` ni al resto |
+| `dashboard.nightgraph.io` sirve la app de `web-juegos` (404 raro) en vez del dashboard | Ya había una Workers Route `*.nightgraph.io/*` → `web-juegos` en la zona, que capturaba el subdominio nuevo antes que el Custom Domain | Añadir una Route específica `dashboard.nightgraph.io/*` → Worker `dashboard` en esa misma zona — más específica gana sobre el comodín, no afecta a `lapocha` ni al resto |
 | 503 / "Sin acceso al dashboard" genérico en producción pese a tener los secrets puestos | Los secrets se metieron en "Variables and Secrets" (build-time) en vez de "**Runtime** Variables and Secrets" (lo único que llega a `context.cloudflare.env`) | Moverlos/añadirlos a la sección Runtime específicamente |
 | Runtime Variable/Secret añadida pero el error sigue igual | Cloudflare crea una versión nueva en Deployments pero no la activa sola | Forzar redeploy: `git commit --allow-empty -m "..." && git push`, o buscar "Retry deployment" en la pestaña Deployments |
 | `wrangler login` da timeout esperando el código de autorización | El flujo OAuth de la CLI no completa bien en este entorno (Git Bash no abre navegador; PowerShell a veces sí pero expira) | Hacer todo desde el dashboard web de Cloudflare en su lugar — no hace falta la CLI para nada de esto |
@@ -279,7 +279,7 @@ sola, hay que forzarlo (un `git commit --allow-empty && git push` funciona).
 - **2026-08-26** — Reescrito de Next.js 16 a React Router 7 + Cloudflare Workers (Fase 1 del roadmap de
   seguridad). Corregidos: suplantación de tenant vía header `x-tenant-id` (CRÍTICO) y autorización contra
   tabla equivocada `tenant_staff` (GRAVE). Login cambiado de email/contraseña a Google OAuth (PKCE).
-- **2026-08-26 (mismo día, más tarde)** — Desplegado en `https://ajustes.nightgraph.io` (cuenta de
+- **2026-08-26 (mismo día, más tarde)** — Desplegado en `https://dashboard.nightgraph.io` (cuenta de
   Cloudflare del compañero, ver sección "Desplegar"). Auditoría de seguridad post-deploy encontró y cerró
   una vulnerabilidad real: las 5 RPC `ng_get_*` eran invocables directamente con la clave pública,
   saltándose el Worker — arreglado con `revoke`/`grant` a `service_role`.

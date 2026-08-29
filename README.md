@@ -1,6 +1,6 @@
 # NightGraph Dashboard
 
-Panel analítico de plataforma (`ajustes.nightgraph.io`) — React Router 7 + Cloudflare Workers.
+Panel analítico de plataforma (`dashboard.nightgraph.io`) — React Router 7 + Cloudflare Workers.
 
 Ver [DOCU.md](./DOCU.md) para la arquitectura completa (auth, rutas, base de datos, cómo añadir una vista).
 
